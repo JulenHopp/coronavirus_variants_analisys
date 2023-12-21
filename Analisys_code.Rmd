@@ -1,0 +1,189 @@
+---
+title: "Análisis genomas covid"
+author: "Julen Hoppenstedt Mandiola A01174089"
+date: "07/05/2023"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  always_allow_html: true
+  word_document: default
+---
+Cargando librerias
+```{r}
+library(viridis)
+library(Biostrings)
+library(DECIPHER)
+library(ade4)
+library(seqinr)
+library(adegenet)
+library(ape)
+library(ggtree)
+library(ggplot2)
+```
+
+Guardando las variantes en variables
+```{r}
+# NC_045512.2 Covid 19 
+# NC_004718.3 sarscov 
+
+# OX008586 Covid beta
+# OW998408 covid alfa
+# OX014251 covid gamma
+
+# MZ937000  Covid murcielago
+# KP849472 Covid perro
+
+
+cov2 = read.GenBank("NC_045512.2")
+sarsCov = read.GenBank("NC_004718.3")
+covBeta = read.GenBank("OX008586.1")
+covAlpha = read.GenBank("OW998408")
+covGamma = read.GenBank("OX014251")
+covOmicron = read.GenBank("OW996240")
+covMurcielago = read.GenBank("MZ937000")
+covCanino = read.GenBank("KP849472")
+
+```
+Guardando todas las secuencias en un archivo fasta
+```{r}
+secuencias <- c(cov2, sarsCov, covBeta, covAlpha, covGamma, covOmicron, covMurcielago, covCanino)
+
+write.dna(secuencias, file = "todas_secuencias.fasta", format = "fasta")
+
+secuencias_adn <- readDNAStringSet("todas_secuencias.fasta", format = "fasta")
+secuencias_adn
+```
+
+Grafico con las longuitudes
+
+```{r}
+longitudes <- width(secuencias_adn)
+library(plotly)
+datos <- data.frame(
+  x = c("Covid 19", "sarsCov", "covBeta", "covAlpha","covGamma", "covOmicron", "covMurcielago", "Alphacoronavirus_1"),
+  y = longitudes)
+
+p <- ggplot(datos, aes(x = x, y = y))+
+  geom_bar(stat = "identity") +
+  scale_y_continuous(breaks = seq(29751, 30020, by = 20))+
+  labs(
+    title = "Longuitud secuencias",
+    x = "ADN",
+    y = "Numero nucleotidos"
+  )
+ggplotly(p)
+```
+
+Calculando la composicion de nucleotidos:
+
+```{r}
+
+composicion_nucleotidos <- alphabetFrequency(secuencias_adn, baseOnly = TRUE)
+
+composicion_nucleotidos
+```
+
+Graficando la composicion de nucleotidos
+```{r}
+barplot(composicion_nucleotidos, main = "Composición de nucleótidos", xlab = "Nucleótidos", ylab = "Frecuencia")
+```
+Calculando el porcentaje de CG de cada variante
+```{r}
+cantidad_cg_todos = c()
+porcenteajes_cg_todos = c()
+
+nombre = c("Covid 19", "SARS-COV", "Betacoronavirus", "Alphacoronavirus","Gammacoronavirus", "Omicron", "Banal-52", "covCanino")
+
+for (i in 1:8){ 
+
+porcentaje = (composicion_nucleotidos[i,2] + composicion_nucleotidos[i,3]) * 100 / (composicion_nucleotidos[i,1]+composicion_nucleotidos[i,2] + composicion_nucleotidos[i,3] + composicion_nucleotidos[i,4])
+cantidad_cg = composicion_nucleotidos[i,2] + composicion_nucleotidos[i,3]
+
+cantidad_cg_todos = append(cantidad_cg_todos, cantidad_cg)
+
+porcenteajes_cg_todos = append(porcenteajes_cg_todos, porcentaje)
+cat("El porcentaje de CG del virus", nombre[i]," es:", porcentaje, "%\n")}
+```
+Generando una grafica que grafique el porcentaje de CG de cada virus
+```{r}
+datos <- data.frame(
+  x = c("Covid 19", "sarsCov", "covBeta", "covAlpha","covGamma", "covOmicron", "covMurcielago", "covCanino"),
+  y = porcenteajes_cg_todos)
+
+p <- ggplot(datos, aes(x = x, y = y))+
+  geom_bar(stat = "identity") +
+  scale_y_continuous(breaks = seq(0,45, by = 2))+
+  labs(
+    title = "Porcentaje CG por virus",
+    x = "Virus",
+    y = "Porcentaje"
+  )
+ggplotly(p)
+
+
+```
+Cerando dataFrame con datos de los genomas
+```{r}
+nombres = c("Covid 19", "sarsCov", "covBeta", "covAlpha","covGamma", "covOmicron", "covMurcielago", "Alphacoronavirus_1")
+filas = c("ID", "CANTIDAD CG", "PORCENTAJE CG")
+id = c("NC_045512.2","NC_004718.3","OX008586.1","OW998408","OX014251","OW996240","MZ937000","KP849472")
+
+df <- data.frame(matrix(nrow = 3, ncol = 8))
+colnames(df) <- nombres
+rownames(df) <- filas
+
+df[1,] <- id
+df[2,] <- cantidad_cg_todos
+df[3,] <- porcenteajes_cg_todos
+# Print the data frame
+cat("El marco de datos resultante es:\n")
+print(df)
+
+
+
+
+
+```
+Alineando las secuencias
+```{r}
+
+virus_seq_align <- AlignSeqs(secuencias_adn)
+BrowseSeqs(virus_seq_align)
+```
+
+Creando la matriz distancia
+```{r}
+writeXStringSet(virus_seq_align, file="coronavirus_seq_align.fasta")
+virus_aligned = read.alignment("coronavirus_seq_align.fasta", format = "fasta")
+
+matriz_distancia = dist.alignment(virus_aligned, matrix = "similarity")
+
+matriz_distancia = as.data.frame(as.matrix(matriz_distancia))
+matriz_distancia
+```
+
+Creando una tabla a escala de grices d ela matriz distancia
+```{r}
+table.paint(matriz_distancia, cleg = 0, clabel.row = 0.5, clabel.col = 0.5) + scale_color_viridis()
+```
+Creando un arbol filogenetico
+```{r}
+writeXStringSet(virus_seq_align, file="coronavirus_seq_align.fasta")
+virus_aligned = read.alignment("coronavirus_seq_align.fasta", format = "fasta")
+matriz_distancia = dist.alignment(virus_aligned, matrix = "similarity")
+
+virus_tree <- nj(matriz_distancia)
+virus_tree <- ladderize(virus_tree)
+plot_virus_filogenia <- ggtree(virus_tree) + geom_tiplab() + ggtitle("Phylogenetic analysis of SARS-CoV genomes")
+plot_virus_filogenia
+```
+
+
+
+
+
+
+
+
+
